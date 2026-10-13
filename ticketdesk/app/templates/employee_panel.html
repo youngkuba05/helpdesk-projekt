@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Panel Pracownika – Moje Zgłoszenia IT</h1>
+
+{% if error %}
+<div class="alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="grid-2">
+    <div class="card">
+        <h2>Nowe zgłoszenie serwisowe</h2>
+        <form action="/tickets/create" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="title">Temat zgłoszenia</label>
+                <input type="text" id="title" name="title" placeholder="np. Problem z drukarką sieciową" minlength="5" maxlength="200" required>
+            </div>
+
+            <div class="form-group">
+                <label for="category">Kategoria</label>
+                <select id="category" name="category" required>
+                    {% for cat in categories %}
+                    <option value="{{ cat }}">{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="priority">Priorytet</label>
+                <select id="priority" name="priority" required>
+                    {% for prio in priorities %}
+                    <option value="{{ prio }}" {% if prio == 'Średni' %}selected{% endif %}>{{ prio }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="description">Szczegółowy opis problemu</label>
+                <textarea id="description" name="description" placeholder="Opisz dokładnie objawy oraz okoliczności wystąpienia błędu..." minlength="10" required></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="attachment">Załącznik (zrzut ekranu / log diagnostyczny, max {{ max_size_mb }} MB)</label>
+                <input type="file" id="attachment" name="attachment" accept=".png,.jpg,.jpeg,.gif,.webp,.txt,.pdf">
+            </div>
+
+            <button type="submit" class="btn" style="width: 100%;">Wyślij zgłoszenie</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2>Historia moich zgłoszeń ({{ tickets|length }})</h2>
+        {% if tickets %}
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Temat</th>
+                    <th>Kategoria</th>
+                    <th>Priorytet</th>
+                    <th>Status</th>
+                    <th>Przypisany Agent</th>
+                    <th>Akcja</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tickets %}
+                <tr>
+                    <td>#{{ t.id }}</td>
+                    <td><strong>{{ t.title }}</strong></td>
+                    <td>{{ t.category }}</td>
+                    <td><span class="prio-{{ t.priority }}">{{ t.priority }}</span></td>
+                    <td>
+                        <span class="badge status-{{ t.status|replace(' ', '-') }}">{{ t.status }}</span>
+                    </td>
+                    <td>{{ t.assigned_agent.full_name if t.assigned_agent else 'Oczekuje na przydział' }}</td>
+                    <td>
+                        <a href="/tickets/{{ t.id }}" class="btn btn-sm">Otwórz wątek</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p style="color: var(--muted);">Nie utworzyłeś jeszcze żadnych zgłoszeń serwisowych.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

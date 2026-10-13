@@ -1,0 +1,40 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: ticketdesk_db_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ticketdesk_user
+      POSTGRES_PASSWORD: ticketdesk_dev_password
+      POSTGRES_DB: ticketdesk_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticketdesk_user -d ticketdesk_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: ticketdesk_web_dev
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://ticketdesk_user:ticketdesk_dev_password@db:5432/ticketdesk_db
+      SECRET_KEY: dev-secret-key-ticketdesk-stateless-cookie-signing
+      MAX_ATTACHMENT_SIZE_MB: "5"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./app:/code/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  pgdata_dev:

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TicketDesk – Wewnętrzny System Obsługi Zgłoszeń IT</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="navbar">
+        <a href="/" class="brand">TicketDesk IT Service Desk</a>
+        {% if user %}
+        <div class="nav-right">
+            <span>Zalogowano jako: <strong>{{ user.full_name }}</strong></span>
+            <span class="role-badge">
+                {% if user.role == 'agent' %}Agent IT{% else %}Pracownik{% endif %}
+            </span>
+            <form action="/logout" method="post" style="display:inline;">
+                <button type="submit" class="btn btn-secondary btn-sm">Wyloguj</button>
+            </form>
+        </div>
+        {% endif %}
+    </header>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>
