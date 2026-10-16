@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, ForeignKey, LargeBinary
+    Column, Integer, String, Text, DateTime, ForeignKey, LargeBinary, Boolean
 )
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -13,8 +13,10 @@ class User(Base):
     username = Column(String(50), unique=True, nullable=False, index=True)
     full_name = Column(String(100), nullable=False)
     password_hash = Column(String(255), nullable=False)
-    # Role: "employee" (Pracownik) lub "agent" (Agent IT)
+    # Role: employee (Pracownik), agent (Agent IT), admin (Administrator IT)
     role = Column(String(20), nullable=False, default="employee")
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    session_version = Column(Integer, nullable=False, default=0, server_default="0")
 
     created_tickets = relationship(
         "Ticket", back_populates="creator", foreign_keys="Ticket.creator_id"

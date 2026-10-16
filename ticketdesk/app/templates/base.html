@@ -11,9 +11,13 @@
         <a href="/" class="brand">TicketDesk IT Service Desk</a>
         {% if user %}
         <div class="nav-right">
+            {% if user.role == 'admin' %}
+            <a href="/panel/agent" class="btn btn-secondary btn-sm">Zgłoszenia</a>
+            <a href="/admin/users" class="btn btn-sm">Użytkownicy</a>
+            {% endif %}
             <span>Zalogowano jako: <strong>{{ user.full_name }}</strong></span>
             <span class="role-badge">
-                {% if user.role == 'agent' %}Agent IT{% else %}Pracownik{% endif %}
+                {% if user.role == 'admin' %}Administrator IT{% elif user.role == 'agent' %}Agent IT{% else %}Pracownik{% endif %}
             </span>
             <form action="/logout" method="post" style="display:inline;">
                 <button type="submit" class="btn btn-secondary btn-sm">Wyloguj</button>

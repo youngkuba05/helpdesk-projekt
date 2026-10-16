@@ -252,3 +252,13 @@ th {
     min-width: 160px;
     flex: 1;
 }
+.page-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.page-heading h1 { margin-bottom: 0; }
+.table-scroll { overflow-x: auto; }
+.user-form { max-width: 640px; margin-top: 1rem; }
+.help-text { color: var(--muted); font-size: 0.85rem; margin: 0.4rem 0 1rem; }
+.alert-success { background: #dcfce7; border: 1px solid #86efac; color: #166534; padding: 0.85rem 1rem; border-radius: 6px; margin-bottom: 1.25rem; }
+@media (max-width: 850px) {
+    .navbar, .navbar .nav-right { flex-wrap: wrap; gap: 0.75rem; }
+    .navbar { padding: 1rem; }
+}

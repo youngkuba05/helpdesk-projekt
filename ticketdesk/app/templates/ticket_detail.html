@@ -29,7 +29,7 @@
                 Status: {{ ticket.status }}
             </span>
 
-            {% if user.role == 'agent' %}
+            {% if user.role in ('agent', 'admin') %}
             <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; align-items: center;">
                 {% if ticket.assigned_agent_id != user.id %}
                 <form action="/tickets/{{ ticket.id }}/claim" method="post">
@@ -77,11 +77,11 @@
 
     <div class="thread-box">
         {% for c in ticket.comments %}
-        <div class="message {% if c.author.role == 'agent' %}message-agent{% else %}message-employee{% endif %}">
+        <div class="message {% if c.author.role in ('agent', 'admin') %}message-agent{% else %}message-employee{% endif %}">
             <div class="message-header">
                 <span>
                     <strong>{{ c.author.full_name }}</strong>
-                    ({% if c.author.role == 'agent' %}Agent IT{% else %}Pracownik{% endif %})
+                    ({% if c.author.role in ('agent', 'admin') %}Agent IT{% else %}Pracownik{% endif %})
                 </span>
                 <span>{{ c.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
             </div>
@@ -106,7 +106,7 @@
         {% endfor %}
     </div>
 
-    {% if ticket.status != 'Zamknięty' or user.role == 'agent' %}
+    {% if ticket.status != 'Zamknięty' or user.role in ('agent', 'admin') %}
     <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid var(--border);">
     <h3>Dodaj wiadomość w wątku</h3>
     <form action="/tickets/{{ ticket.id }}/comments" method="post" enctype="multipart/form-data">
@@ -121,7 +121,7 @@
                 <input type="file" id="attachment" name="attachment" accept=".png,.jpg,.jpeg,.gif,.webp,.txt,.pdf">
             </div>
 
-            {% if user.role == 'agent' %}
+            {% if user.role in ('agent', 'admin') %}
             <div class="form-group">
                 <label for="new_status">Dynamiczna zmiana statusu przy odpowiedzi (opcjonalnie)</label>
                 <select id="new_status" name="new_status">

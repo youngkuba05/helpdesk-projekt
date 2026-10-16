@@ -41,3 +41,26 @@ class CommentCreateInput(BaseModel):
 
 class StatusUpdateInput(BaseModel):
     status: Literal["Nowy", "W trakcie", "Rozwiązany", "Zamknięty"]
+
+
+USER_ROLES = {"employee": "Pracownik", "agent": "Agent IT", "admin": "Administrator IT"}
+
+
+class UserInput(BaseModel):
+    username: str = Field(..., min_length=2, max_length=50, pattern=r"^[a-zA-Z0-9_.-]+$")
+    full_name: str = Field(..., min_length=2, max_length=100)
+    role: Literal["employee", "agent", "admin"]
+    is_active: bool = True
+    password: str = ""
+
+    @field_validator("username", "full_name", mode="before")
+    @classmethod
+    def trim_identity(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        if value and (len(value) < 8 or len(value.encode("utf-8")) > 72):
+            raise ValueError("Hasło musi mieć co najmniej 8 znaków i maksymalnie 72 bajty UTF-8.")
+        return value

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="/admin/users" class="btn btn-secondary btn-sm">&larr; Lista użytkowników</a>
+<div class="card user-form">
+    <h1>{{ 'Edytuj użytkownika' if editing else 'Dodaj użytkownika' }}</h1>
+    {% if error %}<div class="alert-error" role="alert">{{ error }}</div>{% endif %}
+    <form action="{{ '/admin/users/' ~ editing.id ~ '/edit' if editing else '/admin/users/new' }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="form-group">
+            <label for="username">Login</label>
+            <input id="username" name="username" type="text" value="{{ values.username or '' }}" minlength="2" maxlength="50" pattern="[a-zA-Z0-9_.\-]+" required autocomplete="off" aria-describedby="login-help">
+            <p id="login-help" class="help-text">2–50 znaków: litery bez polskich znaków, cyfry, kropka, myślnik lub podkreślenie.</p>
+        </div>
+        <div class="form-group">
+            <label for="full_name">Imię i nazwisko</label>
+            <input id="full_name" name="full_name" type="text" value="{{ values.full_name or '' }}" minlength="2" maxlength="100" required>
+        </div>
+        <div class="form-group">
+            <label for="role">Rola</label>
+            <select id="role" name="role" required>
+                {% for value, label in roles.items() %}
+                <option value="{{ value }}" {% if values.role == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="password">{{ 'Nowe hasło (opcjonalnie)' if editing else 'Hasło' }}</label>
+            <input id="password" name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" {% if not editing %}required{% endif %} aria-describedby="password-help">
+            <p id="password-help" class="help-text">Minimum 8 znaków, maksimum 72 bajty UTF-8 (polskie znaki zajmują więcej niż jeden bajt).{% if editing %} Puste pole zachowuje obecne hasło.{% endif %}</p>
+        </div>
+        <div class="form-group">
+            <label><input name="is_active" type="checkbox" value="true" {% if values.is_active %}checked{% endif %}> Konto aktywne</label>
+            <p class="help-text">Odznacz, aby zablokować logowanie. Historia zgłoszeń pozostanie dostępna.</p>
+        </div>
+        {% if editing and editing.id == user.id %}<p class="help-text">Nie możesz zablokować własnego konta ani zmienić swojej roli. Zmiana własnego hasła wymaga ponownego logowania.</p>{% endif %}
+        <button type="submit" class="btn">{{ 'Zapisz zmiany' if editing else 'Utwórz użytkownika' }}</button>
+        <a href="/admin/users" class="btn btn-secondary">Anuluj</a>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-heading">
+    <h1>Zarządzanie użytkownikami</h1>
+    <a href="/admin/users/new" class="btn">Dodaj użytkownika</a>
+</div>
+{% if saved %}<div class="alert-success" role="status">Zmiany zostały zapisane.</div>{% endif %}
+<div class="card">
+    <p class="help-text">Zablokowanie konta odbiera dostęp do systemu i zachowuje historię zgłoszeń. Zmiana hasła, roli lub aktywności konta unieważnia dotychczasowe sesje.</p>
+    <div class="table-scroll">
+        <table>
+            <thead><tr><th>Login</th><th>Imię i nazwisko</th><th>Rola</th><th>Status konta</th><th>Akcje</th></tr></thead>
+            <tbody>
+                {% for account in users %}
+                <tr>
+                    <td>{{ account.username }}{% if account.id == user.id %} (Ty){% endif %}</td>
+                    <td>{{ account.full_name }}</td>
+                    <td>{{ roles.get(account.role, account.role) }}</td>
+                    <td><span class="badge {{ 'status-Rozwiązany' if account.is_active else 'status-Zamknięty' }}">{{ 'Aktywne' if account.is_active else 'Zablokowane' }}</span></td>
+                    <td><a href="/admin/users/{{ account.id }}/edit" class="btn btn-secondary btn-sm" aria-label="Edytuj użytkownika {{ account.username }}">Edytuj</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
