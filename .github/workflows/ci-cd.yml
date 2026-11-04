@@ -1,0 +1,110 @@
+# TicketDesk CI/CD
+# CI: every pull request and push runs the unit tests and builds the Docker image.
+# CD: a push to main builds the image, pushes it to Amazon ECR and rolls it out to
+#     the ECS Fargate service behind the load balancer.
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-north-1
+  ECR_REPOSITORY: ticketdesk-app
+  ECS_CLUSTER: ticketdesk-cluster
+  ECS_SERVICE: ticketdesk-service
+  TASK_FAMILY: ticketdesk-task
+  CONTAINER_NAME: ticketdesk-app
+
+jobs:
+  test:
+    name: Testy i build obrazu
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ticketdesk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ticketdesk/requirements*.txt
+
+      - name: Instalacja zależności
+        run: pip install -r requirements-test.txt
+
+      - name: Testy jednostkowe i integracyjne
+        run: python -m unittest discover -s tests -v
+
+      - name: Build obrazu Docker (weryfikacja Dockerfile)
+        run: docker build -t ticketdesk-app:ci .
+
+  deploy:
+    name: Wdrożenie na AWS (ECR + ECS)
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dane uwierzytelniające AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Logowanie do Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build i push obrazu
+        id: image
+        working-directory: ticketdesk
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:$TAG"
+          docker build -t "$IMAGE" -t "$REGISTRY/$ECR_REPOSITORY:latest" .
+          docker push "$IMAGE"
+          docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Pobranie aktualnej definicji zadania
+        # The task definition stays in AWS (it holds DATABASE_URL), so it is never committed.
+        run: |
+          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" \
+            --query taskDefinition > task-def-full.json
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)' \
+            task-def-full.json > task-def.json
+
+      - name: Podmiana obrazu w definicji zadania
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.image.outputs.image }}
+
+      - name: Wdrożenie na ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ env.ECS_SERVICE }}
+          wait-for-service-stability: true
+          wait-for-minutes: 15
