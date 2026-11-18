@@ -1,14 +1,11 @@
-# TicketDesk CI/CD
-# CI: every pull request and push runs the unit tests and builds the Docker image.
-# CD: a push to main builds the image, pushes it to Amazon ECR and rolls it out to
-#     the ECS Fargate service behind the load balancer.
+# LAB6: scan once, promote the checked image, verify its signature before ECS.
 name: CI/CD
 
 on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, lab6-security, "lab6/**"]
   workflow_dispatch:
 
 permissions:
@@ -24,84 +21,354 @@ env:
 
 jobs:
   test:
-    name: Testy i build obrazu
+    name: Testy aplikacji
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: ticketdesk
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: ticketdesk/requirements*.txt
-
       - name: Instalacja zależności
-        run: pip install -r requirements-test.txt
-
+        run: python -m pip install -r requirements-test.txt
       - name: Testy jednostkowe i integracyjne
         run: python -m unittest discover -s tests -v
 
-      - name: Build obrazu Docker (weryfikacja Dockerfile)
-        run: docker build -t ticketdesk-app:ci .
+  image-security:
+    name: Obraz (Trivy + ZAP)
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ZAP_IMAGE: ghcr.io/zaproxy/zaproxy@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Instalacja Trivy i weryfikacja SHA256
+        shell: bash
+        run: |
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz \
+            --output "$RUNNER_TEMP/trivy.tar.gz"
+          echo "bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf  $RUNNER_TEMP/trivy.tar.gz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/trivy-bin"
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP/trivy-bin" trivy
+          echo "$RUNNER_TEMP/trivy-bin" >> "$GITHUB_PATH"
+      - name: Build obrazu dla AWS
+        run: docker build --pull --platform linux/amd64 -t ticketdesk-app:ci ./ticketdesk
+      - name: Trivy - pełny raport i blokada podatności
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/security-reports"
+          trivy image --image-src docker --scanners vuln \
+            --format json --output "$RUNNER_TEMP/security-reports/trivy.json" \
+            --exit-code 0 ticketdesk-app:ci
+          python scripts/check_scan_reports.py trivy \
+            --report "$RUNNER_TEMP/security-reports/trivy.json"
+      - name: Uruchomienie aplikacji do DAST
+        shell: bash
+        run: |
+          docker network create ticketdesk-ci-net
+          docker run -d --name ticketdesk-ci --network ticketdesk-ci-net \
+            -e DATABASE_URL=sqlite:////tmp/ticketdesk-ci.db \
+            -e SECRET_KEY="$(openssl rand -hex 32)" \
+            ticketdesk-app:ci
+          for attempt in {1..30}; do
+            if docker exec ticketdesk-ci python -c \
+              'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/login", timeout=2)' \
+              >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs ticketdesk-ci
+          echo "Aplikacja nie uruchomiła się na potrzeby DAST."
+          exit 1
+      - name: ZAP Baseline i ocena raportu
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/security-reports/zap"
+          # ZAP runs as UID 1000; only this disposable report directory is shared.
+          chmod 0777 "$RUNNER_TEMP/security-reports/zap"
+          set +e
+          docker run --rm --network ticketdesk-ci-net \
+            -v "$RUNNER_TEMP/security-reports/zap:/zap/wrk:rw" \
+            "$ZAP_IMAGE" zap-baseline.py \
+            -t http://ticketdesk-ci:8000 -r zap-report.html -J zap-report.json
+          zap_status=$?
+          set -e
+          python scripts/check_scan_reports.py zap \
+            --report "$RUNNER_TEMP/security-reports/zap/zap-report.json" \
+            --exit-code "$zap_status"
+      - name: Raporty obrazu i DAST
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-image-and-dast
+          path: |
+            ${{ runner.temp }}/security-reports/trivy.json
+            ${{ runner.temp }}/security-reports/zap/zap-report.json
+            ${{ runner.temp }}/security-reports/zap/zap-report.html
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Zapis sprawdzonego obrazu
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/ticketdesk-image"
+          cd "$RUNNER_TEMP/ticketdesk-image"
+          docker image inspect ticketdesk-app:ci --format '{{.Id}}' > image-id.txt
+          docker save --output image.tar ticketdesk-app:ci
+          sha256sum image.tar > image.tar.sha256
+      - name: Obraz do wdrożenia (ten sam run)
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ticketdesk-image-${{ github.sha }}
+          path: ${{ runner.temp }}/ticketdesk-image/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - name: Sprzątanie środowiska DAST
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if docker container inspect ticketdesk-ci >/dev/null 2>&1; then
+            docker rm -f ticketdesk-ci
+          fi
+          if docker network inspect ticketdesk-ci-net >/dev/null 2>&1; then
+            docker network rm ticketdesk-ci-net
+          fi
+
+  sast:
+    name: SAST (Bandit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -r security/requirements.txt
+      - name: Analiza kodu (wszystkie poziomy ustaleń blokują)
+        run: python scripts/run_security.py sast --report-dir "$RUNNER_TEMP/security-reports"
+      - name: Raport SAST
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-sast
+          path: ${{ runner.temp }}/security-reports/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  sca:
+    name: SCA (pip-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -r security/requirements.txt
+      - name: Audyt aplikacji i testów (także zależności przechodnich)
+        run: python scripts/run_security.py sca --report-dir "$RUNNER_TEMP/security-reports"
+      - name: Raport SCA
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-sca
+          path: ${{ runner.temp }}/security-reports/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  secrets:
+    name: Sekrety (Gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Instalacja Gitleaks i weryfikacja SHA256
+        shell: bash
+        run: |
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            --output "$RUNNER_TEMP/gitleaks.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/gitleaks-bin"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/gitleaks-bin" gitleaks
+          echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
+      - name: Instalacja narzędzi do testów zabezpieczeń
+        run: python -m pip install -r security/requirements.txt
+      - name: Testy blokad i redakcji raportów na syntetycznych danych
+        env:
+          TICKETDESK_TEST_SCA: "1"
+        run: |
+          python scripts/check_security_pipeline.py
+          python -m unittest discover -s scripts -p '*_test.py' -v
+      - name: Skan plików i historii Git
+        run: python scripts/run_security.py secrets --report-dir "$RUNNER_TEMP/security-reports"
+      - name: Raport sekretów (metadane bez treści dopasowań)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-secrets
+          path: ${{ runner.temp }}/security-reports/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  security-gate:
+    name: Security gate
+    needs: [test, sast, sca, secrets, image-security]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Wymagaj sukcesu wszystkich kontroli
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          results = json.loads(os.environ['RESULTS'])
+          required = {'test', 'sast', 'sca', 'secrets', 'image-security'}
+          blocked = sorted(name for name in required if results.get(name, {}).get('result') != 'success')
+          if blocked:
+              print('Wdrożenie zablokowane przez: ' + ', '.join(blocked))
+              sys.exit(1)
+          print('Wszystkie testy i kontrole bezpieczeństwa zakończyły się sukcesem.')
+          PY
 
   deploy:
     name: Wdrożenie na AWS (ECR + ECS)
-    needs: test
+    needs: security-gate
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     environment: production
     concurrency:
       group: deploy-production
       cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Instalacja Cosign
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: "v3.1.4"
+      - name: Sprawdzenie Cosign
+        run: cosign version
+      - name: Pobranie sprawdzonego obrazu z tego uruchomienia
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ticketdesk-image-${{ github.sha }}
+          path: ${{ runner.temp }}/ticketdesk-image
+      - name: Weryfikacja i wczytanie sprawdzonego obrazu
+        shell: bash
+        working-directory: ${{ runner.temp }}/ticketdesk-image
+        run: |
+          sha256sum --check image.tar.sha256
+          docker load --input image.tar
+          EXPECTED_IMAGE_ID=$(cat image-id.txt)
+          if [[ ! "$EXPECTED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Nieprawidłowy identyfikator obrazu w artefakcie."
+            exit 1
+          fi
+          ACTUAL_IMAGE_ID=$(docker image inspect ticketdesk-app:ci --format '{{.Id}}')
+          if [[ "$ACTUAL_IMAGE_ID" != "$EXPECTED_IMAGE_ID" ]]; then
+            echo "Wczytany obraz nie odpowiada sprawdzonemu artefaktowi."
+            exit 1
+          fi
       - name: Dane uwierzytelniające AWS
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-
       - name: Logowanie do Amazon ECR
         id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build i push obrazu
+        uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2
+      - name: Push sprawdzonego obrazu do ECR
         id: image
-        working-directory: ticketdesk
+        shell: bash
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           TAG: ${{ github.sha }}
         run: |
           IMAGE="$REGISTRY/$ECR_REPOSITORY:$TAG"
-          docker build -t "$IMAGE" -t "$REGISTRY/$ECR_REPOSITORY:latest" .
+          docker tag ticketdesk-app:ci "$IMAGE"
+          docker tag ticketdesk-app:ci "$REGISTRY/$ECR_REPOSITORY:latest"
           docker push "$IMAGE"
           docker push "$REGISTRY/$ECR_REPOSITORY:latest"
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+          DIGEST=$(aws ecr batch-get-image \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageTag=$TAG" \
+            --query 'images[0].imageId.imageDigest' \
+            --output text)
+
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Nie udało się pobrać poprawnego digestu obrazu."
+            exit 1
+          fi
+
+          echo "image=$REGISTRY/$ECR_REPOSITORY@$DIGEST" >> "$GITHUB_OUTPUT"
+      - name: Podpisanie i weryfikacja obrazu
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          EXPECTED_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/ci-cd.yml@refs/heads/main
+        run: |
+          cosign sign --yes "$IMAGE"
+
+          cosign verify "$IMAGE" \
+            --certificate-identity "$EXPECTED_IDENTITY" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
       - name: Pobranie aktualnej definicji zadania
-        # The task definition stays in AWS (it holds DATABASE_URL), so it is never committed.
+        # Contains DATABASE_URL: never print or upload this definition.
         run: |
           aws ecs describe-task-definition --task-definition "$TASK_FAMILY" \
             --query taskDefinition > task-def-full.json
           jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                   .compatibilities, .registeredAt, .registeredBy)' \
             task-def-full.json > task-def.json
-
       - name: Podmiana obrazu w definicji zadania
         id: render
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        uses: aws-actions/amazon-ecs-render-task-definition@8d79160660ad39c402a16e5fc7cd2a32e8f7d6b7 # v1
         with:
           task-definition: task-def.json
           container-name: ${{ env.CONTAINER_NAME }}
           image: ${{ steps.image.outputs.image }}
-
       - name: Wdrożenie na ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        uses: aws-actions/amazon-ecs-deploy-task-definition@a00d4d57ac0de1a99b39fe469f3d898d38717c2b # v2
         with:
           task-definition: ${{ steps.render.outputs.task-definition }}
           cluster: ${{ env.ECS_CLUSTER }}

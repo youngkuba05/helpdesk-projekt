@@ -1,0 +1,4 @@
+# Tools run in CI jobs separate from the application environment.
+bandit==1.9.4
+pip-audit==2.10.1
+PyYAML==6.0.3
