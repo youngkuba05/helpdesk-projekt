@@ -1,7 +1,14 @@
 import os
 from typing import Optional
 from fastapi import (
-    FastAPI, Request, Depends, Form, UploadFile, File, HTTPException, status
+    FastAPI,
+    Request,
+    Depends,
+    Form,
+    UploadFile,
+    File,
+    HTTPException,
+    status,
 )
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -16,22 +23,63 @@ from pydantic import ValidationError
 from .database import engine, SessionLocal, get_db, Base
 from .models import User, Ticket, Comment, Attachment
 from .schemas import (
-    LoginInput, TicketCreateInput, CommentCreateInput, StatusUpdateInput,
-    ALLOWED_CATEGORIES, ALLOWED_PRIORITIES, ALLOWED_STATUSES, UserInput, USER_ROLES
+    LoginInput,
+    TicketCreateInput,
+    CommentCreateInput,
+    StatusUpdateInput,
+    ALLOWED_CATEGORIES,
+    ALLOWED_PRIORITIES,
+    ALLOWED_STATUSES,
+    UserInput,
+    USER_ROLES,
 )
 
 app = FastAPI(
     title="TicketDesk - IT Service Desk (DEV)",
-    description="Wewnętrzny system obsługi zgłoszeń i komunikacji serwisowej IT"
+    description="Wewnętrzny system obsługi zgłoszeń i komunikacji serwisowej IT",
 )
+
+
+@app.middleware("http")
+async def add_securityheaders(request: Request, call_next):
+    response = await call_next(request)
+
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+
+    response.headers["Content-Security-Policy-Report-Only"] = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self'; "
+        "img-src 'self' data:; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "report-uri /csp-report"
+    )
+
+    return response
+
+
+@app.post("/csp-report", include_in_schema=False)
+async def receive_csp_report():
+    return Response(status_code=204)
+
 
 # Montowanie plików statycznych i szablonów Jinja2 (SSR)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+app.mount(
+    "/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static"
+)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 # Konfiguracja bezstanowych ciasteczek sesyjnych i hashowania
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-ticketdesk-stateless-cookie-signing")
+SECRET_KEY = os.getenv(
+    "SECRET_KEY", "dev-secret-key-ticketdesk-stateless-cookie-signing"
+)
 SESSION_COOKIE_NAME = "ticketdesk_session"
 serializer = URLSafeSerializer(SECRET_KEY, salt="session-cookie")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -45,7 +93,7 @@ ALLOWED_MIME_TYPES = {
     "image/gif",
     "image/webp",
     "text/plain",
-    "application/pdf"
+    "application/pdf",
 }
 
 
@@ -57,14 +105,24 @@ def startup_event():
     columns = {column["name"] for column in inspect(engine).get_columns("users")}
     with engine.begin() as connection:
         if "is_active" not in columns:
-            connection.execute(text("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE"))
+            connection.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE"
+                )
+            )
         if "session_version" not in columns:
-            connection.execute(text("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"))
+            connection.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"
+                )
+            )
         # Jednorazowa migracja wbudowanego konta administratora.
         if "is_active" not in columns:
-            connection.execute(text(
-                "UPDATE users SET role = 'admin' WHERE username = 'admin.helpdesk' AND role = 'agent'"
-            ))
+            connection.execute(
+                text(
+                    "UPDATE users SET role = 'admin' WHERE username = 'admin.helpdesk' AND role = 'agent'"
+                )
+            )
     db = SessionLocal()
     try:
         if db.query(User).count() == 0:
@@ -73,25 +131,25 @@ def startup_event():
                     username="jan.kowalski",
                     full_name="Jan Kowalski (Dział Finansów)",
                     password_hash=pwd_context.hash("pracownik123"),
-                    role="employee"
+                    role="employee",
                 ),
                 User(
                     username="anna.nowak",
                     full_name="Anna Nowak (Dział HR)",
                     password_hash=pwd_context.hash("pracownik123"),
-                    role="employee"
+                    role="employee",
                 ),
                 User(
                     username="agent.it",
                     full_name="Jakub Brzostowski (Wsparcie IT)",
                     password_hash=pwd_context.hash("agent123"),
-                    role="agent"
+                    role="agent",
                 ),
                 User(
                     username="admin.helpdesk",
                     full_name="Stanisław Rajm (Administrator IT)",
                     password_hash=pwd_context.hash("agent123"),
-                    role="admin"
+                    role="admin",
                 ),
             ]
             db.add_all(users)
@@ -107,7 +165,7 @@ def startup_event():
                 priority="Wysoki",
                 status="W trakcie",
                 creator_id=emp.id,
-                assigned_agent_id=agent.id
+                assigned_agent_id=agent.id,
             )
             db.add(sample_ticket)
             db.commit()
@@ -116,7 +174,7 @@ def startup_event():
             sample_comment = Comment(
                 ticket_id=sample_ticket.id,
                 author_id=agent.id,
-                content="Cześć Janie, zweryfikowałem logi bramy VPN. Załącz proszę zrzut ekranu z komunikatem błędu z klienta OpenVPN."
+                content="Cześć Janie, zweryfikowałem logi bramy VPN. Załącz proszę zrzut ekranu z komunikatem błędu z klienta OpenVPN.",
             )
             db.add(sample_comment)
             db.commit()
@@ -134,7 +192,9 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Optiona
         user_id = data.get("user_id")
         if not user_id:
             return None
-        user = db.query(User).filter(User.id == user_id, User.is_active.is_(True)).first()
+        user = (
+            db.query(User).filter(User.id == user_id, User.is_active.is_(True)).first()
+        )
         if user and data.get("session_version", 0) == user.session_version:
             return user
         return None
@@ -146,17 +206,13 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = get_current_user(request, db)
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_303_SEE_OTHER,
-            headers={"Location": "/login"}
+            status_code=status.HTTP_303_SEE_OTHER, headers={"Location": "/login"}
         )
     return user
 
 
 async def validate_and_save_attachment(
-    upload_file: UploadFile,
-    ticket_id: int,
-    comment_id: Optional[int],
-    db: Session
+    upload_file: UploadFile, ticket_id: int, comment_id: Optional[int], db: Session
 ) -> Optional[str]:
     if not upload_file or not upload_file.filename:
         return None
@@ -185,7 +241,7 @@ async def validate_and_save_attachment(
         filename=os.path.basename(upload_file.filename),
         mime_type=upload_file.content_type,
         file_size=file_size,
-        data=raw_bytes
+        data=raw_bytes,
     )
     db.add(attachment)
     db.commit()
@@ -199,8 +255,12 @@ def root(request: Request, db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     if user.role in ("agent", "admin"):
-        return RedirectResponse(url="/panel/agent", status_code=status.HTTP_303_SEE_OTHER)
-    return RedirectResponse(url="/panel/employee", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/panel/agent", status_code=status.HTTP_303_SEE_OTHER
+        )
+    return RedirectResponse(
+        url="/panel/employee", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -208,7 +268,9 @@ def login_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if user:
         return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(
+        request, "login.html", {"request": request, "error": None}
+    )
 
 
 @app.post("/login", response_class=HTMLResponse)
@@ -216,35 +278,45 @@ def login_submit(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     try:
         credentials = LoginInput(username=username, password=password)
     except ValidationError:
         return templates.TemplateResponse(
+            request,
             "login.html",
             {"request": request, "error": "Nieprawidłowy format loginu lub hasła."},
-            status_code=400
+            status_code=400,
         )
 
     user = db.query(User).filter(User.username == credentials.username).first()
-    if not user or not user.is_active or not pwd_context.verify(credentials.password, user.password_hash):
+    if (
+        not user
+        or not user.is_active
+        or not pwd_context.verify(credentials.password, user.password_hash)
+    ):
         return templates.TemplateResponse(
+            request,
             "login.html",
             {"request": request, "error": "Błędna nazwa użytkownika lub hasło."},
-            status_code=401
+            status_code=401,
         )
 
     # Wersja sesji pozwala unieważnić ciasteczka po zmianie hasła lub uprawnień.
-    token = serializer.dumps({"user_id": user.id, "session_version": user.session_version})
-    target_url = "/panel/agent" if user.role in ("agent", "admin") else "/panel/employee"
+    token = serializer.dumps(
+        {"user_id": user.id, "session_version": user.session_version}
+    )
+    target_url = (
+        "/panel/agent" if user.role in ("agent", "admin") else "/panel/employee"
+    )
     response = RedirectResponse(url=target_url, status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
         httponly=True,
         samesite="lax",
-        max_age=86400
+        max_age=86400,
     )
     return response
 
@@ -262,10 +334,12 @@ def employee_panel(
     request: Request,
     error: Optional[str] = None,
     user: User = Depends(require_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     if user.role != "employee":
-        return RedirectResponse(url="/panel/agent", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/panel/agent", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     my_tickets = (
         db.query(Ticket)
@@ -274,6 +348,7 @@ def employee_panel(
         .all()
     )
     return templates.TemplateResponse(
+        request,
         "employee_panel.html",
         {
             "request": request,
@@ -282,8 +357,8 @@ def employee_panel(
             "categories": ALLOWED_CATEGORIES,
             "priorities": ALLOWED_PRIORITIES,
             "max_size_mb": MAX_ATTACHMENT_SIZE_MB,
-            "error": error
-        }
+            "error": error,
+        },
     )
 
 
@@ -296,21 +371,26 @@ async def create_ticket(
     description: str = Form(...),
     attachment: Optional[UploadFile] = File(None),
     user: User = Depends(require_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     if user.role != "employee":
-        raise HTTPException(status_code=403, detail="Tylko pracownicy mogą tworzyć zgłoszenia w tym widoku.")
+        raise HTTPException(
+            status_code=403,
+            detail="Tylko pracownicy mogą tworzyć zgłoszenia w tym widoku.",
+        )
 
     try:
         validated = TicketCreateInput(
-            title=title,
-            category=category,
-            priority=priority,
-            description=description
+            title=title, category=category, priority=priority, description=description
         )
     except ValidationError as exc:
         err_msg = "; ".join([e["msg"] for e in exc.errors()])
-        return employee_panel(request=request, error=f"Błąd walidacji formularza: {err_msg}", user=user, db=db)
+        return employee_panel(
+            request=request,
+            error=f"Błąd walidacji formularza: {err_msg}",
+            user=user,
+            db=db,
+        )
 
     new_ticket = Ticket(
         title=validated.title,
@@ -318,7 +398,7 @@ async def create_ticket(
         category=validated.category,
         priority=validated.priority,
         status="Nowy",
-        creator_id=user.id
+        creator_id=user.id,
     )
     db.add(new_ticket)
     db.commit()
@@ -329,12 +409,11 @@ async def create_ticket(
         if err:
             return RedirectResponse(
                 url=f"/tickets/{new_ticket.id}?error={err}",
-                status_code=status.HTTP_303_SEE_OTHER
+                status_code=status.HTTP_303_SEE_OTHER,
             )
 
     return RedirectResponse(
-        url=f"/tickets/{new_ticket.id}",
-        status_code=status.HTTP_303_SEE_OTHER
+        url=f"/tickets/{new_ticket.id}", status_code=status.HTTP_303_SEE_OTHER
     )
 
 
@@ -347,10 +426,12 @@ def agent_panel(
     category_filter: Optional[str] = None,
     assignment_filter: Optional[str] = None,
     user: User = Depends(require_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     if user.role not in ("agent", "admin"):
-        return RedirectResponse(url="/panel/employee", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/panel/employee", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     query = db.query(Ticket)
 
@@ -368,6 +449,7 @@ def agent_panel(
     tickets = query.order_by(Ticket.updated_at.desc()).all()
 
     return templates.TemplateResponse(
+        request,
         "agent_panel.html",
         {
             "request": request,
@@ -380,17 +462,15 @@ def agent_panel(
                 "status": status_filter or "",
                 "priority": priority_filter or "",
                 "category": category_filter or "",
-                "assignment": assignment_filter or ""
-            }
-        }
+                "assignment": assignment_filter or "",
+            },
+        },
     )
 
 
 @app.post("/tickets/{ticket_id}/claim")
 def claim_ticket(
-    ticket_id: int,
-    user: User = Depends(require_user),
-    db: Session = Depends(get_db)
+    ticket_id: int, user: User = Depends(require_user), db: Session = Depends(get_db)
 ):
     if user.role not in ("agent", "admin"):
         raise HTTPException(status_code=403, detail="Brak uprawnień Agenta IT.")
@@ -405,8 +485,7 @@ def claim_ticket(
     db.commit()
 
     return RedirectResponse(
-        url=f"/tickets/{ticket_id}",
-        status_code=status.HTTP_303_SEE_OTHER
+        url=f"/tickets/{ticket_id}", status_code=status.HTTP_303_SEE_OTHER
     )
 
 
@@ -415,10 +494,13 @@ def update_ticket_status(
     ticket_id: int,
     new_status: str = Form(...),
     user: User = Depends(require_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     if user.role not in ("agent", "admin"):
-        raise HTTPException(status_code=403, detail="Tylko Agent IT może bezpośrednio zmieniać status sprawy.")
+        raise HTTPException(
+            status_code=403,
+            detail="Tylko Agent IT może bezpośrednio zmieniać status sprawy.",
+        )
 
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
@@ -433,8 +515,7 @@ def update_ticket_status(
     db.commit()
 
     return RedirectResponse(
-        url=f"/tickets/{ticket_id}",
-        status_code=status.HTTP_303_SEE_OTHER
+        url=f"/tickets/{ticket_id}", status_code=status.HTTP_303_SEE_OTHER
     )
 
 
@@ -445,17 +526,22 @@ def ticket_detail(
     request: Request,
     error: Optional[str] = None,
     user: User = Depends(require_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
-        raise HTTPException(status_code=404, detail="Zgłoszenie nie zostało znalezione.")
+        raise HTTPException(
+            status_code=404, detail="Zgłoszenie nie zostało znalezione."
+        )
 
     # Kontrola dostępu: pracownik widzi wyłącznie swoje zgłoszenia, Agent IT widzi wszystkie
     if user.role == "employee" and ticket.creator_id != user.id:
-        raise HTTPException(status_code=403, detail="Brak dostępu do cudzego zgłoszenia.")
+        raise HTTPException(
+            status_code=403, detail="Brak dostępu do cudzego zgłoszenia."
+        )
 
     return templates.TemplateResponse(
+        request,
         "ticket_detail.html",
         {
             "request": request,
@@ -463,8 +549,8 @@ def ticket_detail(
             "ticket": ticket,
             "statuses": ALLOWED_STATUSES,
             "max_size_mb": MAX_ATTACHMENT_SIZE_MB,
-            "error": error
-        }
+            "error": error,
+        },
     )
 
 
@@ -475,7 +561,7 @@ async def add_comment(
     new_status: Optional[str] = Form(None),
     attachment: Optional[UploadFile] = File(None),
     user: User = Depends(require_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
@@ -487,7 +573,7 @@ async def add_comment(
     if ticket.status == "Zamknięty" and user.role not in ("agent", "admin"):
         return RedirectResponse(
             url=f"/tickets/{ticket_id}?error=Zgłoszenie jest zamknięte. Nie można dodawać nowych komentarzy.",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     status_val = new_status if (new_status and new_status in ALLOWED_STATUSES) else None
@@ -497,14 +583,10 @@ async def add_comment(
     except ValidationError:
         return RedirectResponse(
             url=f"/tickets/{ticket_id}?error=Treść komentarza jest nieprawidłowa.",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    comment = Comment(
-        ticket_id=ticket.id,
-        author_id=user.id,
-        content=validated.content
-    )
+    comment = Comment(ticket_id=ticket.id, author_id=user.id, content=validated.content)
     db.add(comment)
 
     # Dynamiczna zmiana statusu sprawy przy odpowiedzi
@@ -528,12 +610,11 @@ async def add_comment(
         if err:
             return RedirectResponse(
                 url=f"/tickets/{ticket_id}?error={err}",
-                status_code=status.HTTP_303_SEE_OTHER
+                status_code=status.HTTP_303_SEE_OTHER,
             )
 
     return RedirectResponse(
-        url=f"/tickets/{ticket_id}",
-        status_code=status.HTTP_303_SEE_OTHER
+        url=f"/tickets/{ticket_id}", status_code=status.HTTP_303_SEE_OTHER
     )
 
 
@@ -541,7 +622,7 @@ async def add_comment(
 def get_attachment(
     attachment_id: int,
     user: User = Depends(require_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     attachment = db.query(Attachment).filter(Attachment.id == attachment_id).first()
     if not attachment:
@@ -549,25 +630,38 @@ def get_attachment(
 
     ticket = attachment.ticket
     if user.role == "employee" and ticket.creator_id != user.id:
-        raise HTTPException(status_code=403, detail="Brak uprawnień do pobrania tego załącznika.")
+        raise HTTPException(
+            status_code=403, detail="Brak uprawnień do pobrania tego załącznika."
+        )
 
-    disposition = "inline" if attachment.mime_type.startswith("image/") else "attachment"
+    disposition = (
+        "inline" if attachment.mime_type.startswith("image/") else "attachment"
+    )
     headers = {
         "Content-Disposition": f'{disposition}; filename="{attachment.filename}"'
     }
-    return Response(content=attachment.data, media_type=attachment.mime_type, headers=headers)
+    return Response(
+        content=attachment.data, media_type=attachment.mime_type, headers=headers
+    )
 
 
 # --- ROUTING: ZARZĄDZANIE UŻYTKOWNIKAMI PRZEZ ADMINISTRATORA IT ---
 def require_admin(user: User = Depends(require_user)) -> User:
     if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Wymagane uprawnienia administratora IT.")
+        raise HTTPException(
+            status_code=403, detail="Wymagane uprawnienia administratora IT."
+        )
     return user
 
 
 def admin_csrf_token(user: User) -> str:
-    return serializer.dumps({"purpose": "manage-users", "user_id": user.id,
-                             "session_version": user.session_version})
+    return serializer.dumps(
+        {
+            "purpose": "manage-users",
+            "user_id": user.id,
+            "session_version": user.session_version,
+        }
+    )
 
 
 def verify_admin_csrf(token: str, user: User):
@@ -575,46 +669,91 @@ def verify_admin_csrf(token: str, user: User):
         payload = serializer.loads(token)
     except BadSignature:
         raise HTTPException(status_code=403, detail="Nieprawidłowy token formularza.")
-    if payload != {"purpose": "manage-users", "user_id": user.id,
-                   "session_version": user.session_version}:
+    if payload != {
+        "purpose": "manage-users",
+        "user_id": user.id,
+        "session_version": user.session_version,
+    }:
         raise HTTPException(status_code=403, detail="Nieprawidłowy token formularza.")
 
 
-def render_user_form(request, user, db, editing=None, values=None, error=None, status_code=200):
-    return templates.TemplateResponse("user_form.html", {
-        "request": request, "user": user, "editing": editing,
-        "values": values if values is not None else editing,
-        "roles": USER_ROLES, "csrf_token": admin_csrf_token(user), "error": error,
-    }, status_code=status_code)
+def render_user_form(
+    request, user, db, editing=None, values=None, error=None, status_code=200
+):
+    return templates.TemplateResponse(
+        request,
+        "user_form.html",
+        {
+            "request": request,
+            "user": user,
+            "editing": editing,
+            "values": values if values is not None else editing,
+            "roles": USER_ROLES,
+            "csrf_token": admin_csrf_token(user),
+            "error": error,
+        },
+        status_code=status_code,
+    )
 
 
 @app.get("/admin/users", response_class=HTMLResponse)
-def users_panel(request: Request, user: User = Depends(require_admin), db: Session = Depends(get_db)):
-    return templates.TemplateResponse("users.html", {
-        "request": request, "user": user, "roles": USER_ROLES,
-        "users": db.query(User).order_by(User.username).all(),
-        "saved": request.query_params.get("saved") == "1",
-    })
+def users_panel(
+    request: Request, user: User = Depends(require_admin), db: Session = Depends(get_db)
+):
+    return templates.TemplateResponse(
+        request,
+        "users.html",
+        {
+            "request": request,
+            "user": user,
+            "roles": USER_ROLES,
+            "users": db.query(User).order_by(User.username).all(),
+            "saved": request.query_params.get("saved") == "1",
+        },
+    )
 
 
 @app.get("/admin/users/new", response_class=HTMLResponse)
-def new_user_form(request: Request, user: User = Depends(require_admin), db: Session = Depends(get_db)):
-    return render_user_form(request, user, db, values={"role": "employee", "is_active": True})
+def new_user_form(
+    request: Request, user: User = Depends(require_admin), db: Session = Depends(get_db)
+):
+    return render_user_form(
+        request, user, db, values={"role": "employee", "is_active": True}
+    )
 
 
 @app.get("/admin/users/{user_id}/edit", response_class=HTMLResponse)
-def edit_user_form(user_id: int, request: Request, user: User = Depends(require_admin),
-                   db: Session = Depends(get_db)):
+def edit_user_form(
+    user_id: int,
+    request: Request,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
     editing = db.get(User, user_id)
     if not editing:
         raise HTTPException(status_code=404, detail="Użytkownik nie istnieje.")
     return render_user_form(request, user, db, editing=editing)
 
 
-def save_managed_user(request, admin, db, username, full_name, role, is_active, password,
-                      csrf_token, editing=None):
+def save_managed_user(
+    request,
+    admin,
+    db,
+    username,
+    full_name,
+    role,
+    is_active,
+    password,
+    csrf_token,
+    editing=None,
+):
     verify_admin_csrf(csrf_token, admin)
-    values = {"username": username, "full_name": full_name, "role": role, "is_active": is_active}
+    values = {
+        "username": username,
+        "full_name": full_name,
+        "role": role,
+        "is_active": is_active,
+    }
 
     def error_response(message, code=400):
         return render_user_form(request, admin, db, editing, values, message, code)
@@ -629,17 +768,27 @@ def save_managed_user(request, admin, db, username, full_name, role, is_active, 
         )
     if not editing and not data.password:
         return error_response("Podaj hasło dla nowego użytkownika.")
-    if editing and editing.id == admin.id and (data.role != "admin" or not data.is_active):
-        return error_response("Nie możesz zablokować własnego konta ani odebrać sobie roli administratora.")
+    if (
+        editing
+        and editing.id == admin.id
+        and (data.role != "admin" or not data.is_active)
+    ):
+        return error_response(
+            "Nie możesz zablokować własnego konta ani odebrać sobie roli administratora."
+        )
 
-    duplicate = db.query(User).filter(func.lower(User.username) == data.username.lower())
+    duplicate = db.query(User).filter(
+        func.lower(User.username) == data.username.lower()
+    )
     if editing:
         duplicate = duplicate.filter(User.id != editing.id)
     if duplicate.first():
         return error_response("Użytkownik o takim loginie już istnieje.", 409)
 
     target = editing or User()
-    if editing and (data.password or target.role != data.role or target.is_active != data.is_active):
+    if editing and (
+        data.password or target.role != data.role or target.is_active != data.is_active
+    ):
         target.session_version += 1
     target.username = data.username
     target.full_name = data.full_name
@@ -658,21 +807,46 @@ def save_managed_user(request, admin, db, username, full_name, role, is_active, 
 
 @app.post("/admin/users/new", response_class=HTMLResponse)
 def create_managed_user(
-    request: Request, username: str = Form(""), full_name: str = Form(""),
-    role: str = Form("employee"), is_active: bool = Form(False), password: str = Form(""),
-    csrf_token: str = Form(""), user: User = Depends(require_admin), db: Session = Depends(get_db)
+    request: Request,
+    username: str = Form(""),
+    full_name: str = Form(""),
+    role: str = Form("employee"),
+    is_active: bool = Form(False),
+    password: str = Form(""),
+    csrf_token: str = Form(""),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
 ):
-    return save_managed_user(request, user, db, username, full_name, role, is_active, password, csrf_token)
+    return save_managed_user(
+        request, user, db, username, full_name, role, is_active, password, csrf_token
+    )
 
 
 @app.post("/admin/users/{user_id}/edit", response_class=HTMLResponse)
 def update_managed_user(
-    user_id: int, request: Request, username: str = Form(""), full_name: str = Form(""),
-    role: str = Form("employee"), is_active: bool = Form(False), password: str = Form(""),
-    csrf_token: str = Form(""), user: User = Depends(require_admin), db: Session = Depends(get_db)
+    user_id: int,
+    request: Request,
+    username: str = Form(""),
+    full_name: str = Form(""),
+    role: str = Form("employee"),
+    is_active: bool = Form(False),
+    password: str = Form(""),
+    csrf_token: str = Form(""),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
 ):
     editing = db.get(User, user_id)
     if not editing:
         raise HTTPException(status_code=404, detail="Użytkownik nie istnieje.")
-    return save_managed_user(request, user, db, username, full_name, role, is_active, password,
-                             csrf_token, editing)
+    return save_managed_user(
+        request,
+        user,
+        db,
+        username,
+        full_name,
+        role,
+        is_active,
+        password,
+        csrf_token,
+        editing,
+    )

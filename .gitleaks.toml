@@ -1,0 +1,14 @@
+title = "TicketDesk secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Known seeded DEV account password, used only by the isolated ticket-flow test"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^pracownik123$''']
+paths = ['''(^|/)ticketdesk/tests/test_ticket_flow\.py$''']
