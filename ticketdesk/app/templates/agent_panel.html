@@ -49,48 +49,51 @@
         </div>
     </form>
 
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Zgłaszający</th>
-                <th>Temat</th>
-                <th>Kategoria</th>
-                <th>Priorytet</th>
-                <th>Status</th>
-                <th>Przypisany Agent</th>
-                <th>Ostatnia zmiana</th>
-                <th>Akcje</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for t in tickets %}
-            <tr>
-                <td>#{{ t.id }}</td>
-                <td>{{ t.creator.full_name }}</td>
-                <td><strong>{{ t.title }}</strong></td>
-                <td>{{ t.category }}</td>
-                <td><span class="prio-{{ t.priority }}">{{ t.priority }}</span></td>
-                <td><span class="badge status-{{ t.status|replace(' ', '-') }}">{{ t.status }}</span></td>
-                <td>{{ t.assigned_agent.full_name if t.assigned_agent else '— Brak —' }}</td>
-                <td>{{ t.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                <td style="display: flex; gap: 0.4rem;">
-                    <a href="/tickets/{{ t.id }}" class="btn btn-sm">Obsłuż</a>
-                    {% if not t.assigned_agent_id or t.assigned_agent_id != user.id %}
-                    <form action="/tickets/{{ t.id }}/claim" method="post" style="display:inline;">
-                        <button type="submit" class="btn btn-secondary btn-sm">Przejmij</button>
-                    </form>
-                    {% endif %}
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="9" style="text-align: center; color: var(--muted);">
-                    Brak zgłoszeń spełniających wybrane kryteria filtrowania.
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Zgłaszający</th>
+                    <th>Temat</th>
+                    <th>Kategoria</th>
+                    <th>Priorytet</th>
+                    <th>Status</th>
+                    <th>Przypisany Agent</th>
+                    <th>Ostatnia zmiana</th>
+                    <th>Akcje</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tickets %}
+                <tr>
+                    <td>#{{ t.id }}</td>
+                    <td>{{ t.creator.full_name }}</td>
+                    <td><strong>{{ t.title }}</strong></td>
+                    <td>{{ t.category }}</td>
+                    <td><span class="prio-{{ t.priority }}">{{ t.priority }}</span></td>
+                    <td><span class="badge status-{{ t.status|replace(' ', '-') }}">{{ t.status }}</span></td>
+                    <td>{{ t.assigned_agent.full_name if t.assigned_agent else '— Brak —' }}</td>
+                    <td>{{ t.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td class="actions-cell">
+                        <a href="/tickets/{{ t.id }}" class="btn btn-sm">Obsłuż</a>
+                        {% if not t.assigned_agent_id or t.assigned_agent_id != user.id %}
+                        <form action="/tickets/{{ t.id }}/claim" method="post" class="inline-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-secondary btn-sm">Przejmij</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="empty-cell">
+                        Brak zgłoszeń spełniających wybrane kryteria filtrowania.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 {% endblock %}

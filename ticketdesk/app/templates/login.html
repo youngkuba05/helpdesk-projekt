@@ -1,37 +1,40 @@
 {% extends "base.html" %}
 {% block content %}
-<div style="max-width: 460px; margin: 3rem auto;">
+<div class="login-wrapper">
     <div class="card">
         <h2>Logowanie do systemu TicketDesk</h2>
-        <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 1.25rem;">
+        <p class="subtitle">
             Wewnętrzny system obsługi zgłoszeń i komunikacji serwisowej IT
         </p>
 
         {% if error %}
-        <div class="alert-error">{{ error }}</div>
+        <div class="alert-error" role="alert">{{ error }}</div>
         {% endif %}
 
         <form action="/login" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="form-group">
                 <label for="username">Nazwa użytkownika</label>
-                <input type="text" id="username" name="username" required autofocus>
+                <input type="text" id="username" name="username" autocomplete="username" required autofocus>
             </div>
             <div class="form-group">
                 <label for="password">Hasło</label>
-                <input type="password" id="password" name="password" required>
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
             </div>
-            <button type="submit" class="btn" style="width: 100%;">Zaloguj się</button>
+            <button type="submit" class="btn btn-full">Zaloguj się</button>
         </form>
     </div>
 
-    <div class="card" style="font-size: 0.85rem; background: #f1f5f9;">
+    {% if show_demo_accounts %}
+    <div class="card dev-accounts-card">
         <h3>Konta testowe (Środowisko DEV):</h3>
-        <ul style="padding-left: 1.2rem; margin-top: 0.5rem;">
+        <ul class="dev-accounts-list">
             <li><strong>Pracownik 1:</strong> <code>jan.kowalski</code> / <code>pracownik123</code></li>
             <li><strong>Pracownik 2:</strong> <code>anna.nowak</code> / <code>pracownik123</code></li>
             <li><strong>Agent IT 1:</strong> <code>agent.it</code> / <code>agent123</code></li>
             <li><strong>Administrator IT:</strong> <code>admin.helpdesk</code> / <code>agent123</code></li>
         </ul>
     </div>
+    {% endif %}
 </div>
 {% endblock %}

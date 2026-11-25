@@ -18,8 +18,13 @@ RUN pip install --no-cache-dir --only-binary=:all: \
 
 RUN python -m pip uninstall -y pip setuptools wheel
 
-COPY ./app /code/app
+RUN groupadd --gid 10001 appgroup \
+  && useradd --uid 10001 --gid appgroup --shell /usr/sbin/nologin --no-create-home appuser
+
+COPY --chown=appuser:appgroup ./app /code/app
+
+USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--no-server-header"]

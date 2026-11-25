@@ -5,12 +5,14 @@ services:
     image: postgres:15-alpine
     container_name: ticketdesk_db_dev
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       POSTGRES_USER: ticketdesk_user
       POSTGRES_PASSWORD: ticketdesk_dev_password
       POSTGRES_DB: ticketdesk_db
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata_dev:/var/lib/postgresql/data
     healthcheck:
@@ -23,18 +25,25 @@ services:
     build: .
     container_name: ticketdesk_web_dev
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
+      APP_ENV: development
       DATABASE_URL: postgresql://ticketdesk_user:ticketdesk_dev_password@db:5432/ticketdesk_db
+      DB_SSLMODE: disable
       SECRET_KEY: dev-secret-key-ticketdesk-stateless-cookie-signing
+      ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0,web"
+      TRUST_PROXY_HEADERS: "false"
+      COOKIE_SECURE: "false"
       MAX_ATTACHMENT_SIZE_MB: "5"
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      - ./app:/code/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - ./app:/code/app:ro
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --no-server-header
 
 volumes:
   pgdata_dev:

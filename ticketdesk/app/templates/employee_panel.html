@@ -3,13 +3,14 @@
 <h1>Panel Pracownika – Moje Zgłoszenia IT</h1>
 
 {% if error %}
-<div class="alert-error">{{ error }}</div>
+<div class="alert-error" role="alert">{{ error }}</div>
 {% endif %}
 
 <div class="grid-2">
     <div class="card">
         <h2>Nowe zgłoszenie serwisowe</h2>
         <form action="/tickets/create" method="post" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="form-group">
                 <label for="title">Temat zgłoszenia</label>
                 <input type="text" id="title" name="title" placeholder="np. Problem z drukarką sieciową" minlength="5" maxlength="200" required>
@@ -43,45 +44,47 @@
                 <input type="file" id="attachment" name="attachment" accept=".png,.jpg,.jpeg,.gif,.webp,.txt,.pdf">
             </div>
 
-            <button type="submit" class="btn" style="width: 100%;">Wyślij zgłoszenie</button>
+            <button type="submit" class="btn btn-full">Wyślij zgłoszenie</button>
         </form>
     </div>
 
     <div class="card">
         <h2>Historia moich zgłoszeń ({{ tickets|length }})</h2>
         {% if tickets %}
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Temat</th>
-                    <th>Kategoria</th>
-                    <th>Priorytet</th>
-                    <th>Status</th>
-                    <th>Przypisany Agent</th>
-                    <th>Akcja</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for t in tickets %}
-                <tr>
-                    <td>#{{ t.id }}</td>
-                    <td><strong>{{ t.title }}</strong></td>
-                    <td>{{ t.category }}</td>
-                    <td><span class="prio-{{ t.priority }}">{{ t.priority }}</span></td>
-                    <td>
-                        <span class="badge status-{{ t.status|replace(' ', '-') }}">{{ t.status }}</span>
-                    </td>
-                    <td>{{ t.assigned_agent.full_name if t.assigned_agent else 'Oczekuje na przydział' }}</td>
-                    <td>
-                        <a href="/tickets/{{ t.id }}" class="btn btn-sm">Otwórz wątek</a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Temat</th>
+                        <th>Kategoria</th>
+                        <th>Priorytet</th>
+                        <th>Status</th>
+                        <th>Przypisany Agent</th>
+                        <th>Akcja</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in tickets %}
+                    <tr>
+                        <td>#{{ t.id }}</td>
+                        <td><strong>{{ t.title }}</strong></td>
+                        <td>{{ t.category }}</td>
+                        <td><span class="prio-{{ t.priority }}">{{ t.priority }}</span></td>
+                        <td>
+                            <span class="badge status-{{ t.status|replace(' ', '-') }}">{{ t.status }}</span>
+                        </td>
+                        <td>{{ t.assigned_agent.full_name if t.assigned_agent else 'Oczekuje na przydział' }}</td>
+                        <td>
+                            <a href="/tickets/{{ t.id }}" class="btn btn-sm">Otwórz wątek</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
         {% else %}
-        <p style="color: var(--muted);">Nie utworzyłeś jeszcze żadnych zgłoszeń serwisowych.</p>
+        <p class="muted-text">Nie utworzyłeś jeszcze żadnych zgłoszeń serwisowych.</p>
         {% endif %}
     </div>
 </div>

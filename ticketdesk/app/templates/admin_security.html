@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-heading">
+    <h1>Monitoring sesji i zdarzeń bezpieczeństwa</h1>
+</div>
+
+{% if notice %}
+<div class="alert-success" role="status">{{ notice }}</div>
+{% endif %}
+
+<div class="card">
+    <h2>Aktywne sesje w systemie ({{ sessions|length }})</h2>
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th>Użytkownik</th>
+                    <th>Rola</th>
+                    <th>ID sesji</th>
+                    <th>Adres IP</th>
+                    <th>Klient (User-Agent)</th>
+                    <th>Ostatnia aktywność (UTC)</th>
+                    <th>Akcja</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sessions %}
+                <tr>
+                    <td><strong>{{ s.user.username }}</strong></td>
+                    <td>{{ s.user.role }}</td>
+                    <td>
+                        <code>{{ s.id[:10] }}…</code>
+                        {% if s.id == current_session_id %}
+                        <span class="badge status-Rozwiązany">Bieżąca</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ s.ip_address }}</td>
+                    <td class="ua-cell">{{ s.user_agent }}</td>
+                    <td>{{ s.last_seen_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td>
+                        <form action="/admin/sessions/{{ s.id }}/revoke" method="post" class="inline-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-danger btn-sm">Unieważnij</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="empty-cell">Brak aktywnych sesji.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Ostatnie zdarzenia bezpieczeństwa ({{ events|length }})</h2>
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th>Czas (UTC)</th>
+                    <th>Poziom</th>
+                    <th>Zdarzenie</th>
+                    <th>Użytkownik</th>
+                    <th>Adres IP</th>
+                    <th>Ścieżka</th>
+                    <th>Szczegóły</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in events %}
+                <tr>
+                    <td>{{ e.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td><span class="badge sev-{{ e.severity }}">{{ e.severity }}</span></td>
+                    <td><code>{{ e.event_type }}</code></td>
+                    <td>{{ e.username or '—' }}</td>
+                    <td>{{ e.ip_address or '—' }}</td>
+                    <td><code>{{ e.path or '—' }}</code></td>
+                    <td>{{ e.details or '—' }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="empty-cell">Brak zarejestrowanych zdarzeń bezpieczeństwa.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
