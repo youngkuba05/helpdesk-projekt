@@ -13,13 +13,16 @@
         <div class="nav-right">
             {% if user.role == 'admin' %}
             <a href="/panel/agent" class="btn btn-secondary btn-sm">Zgłoszenia</a>
-            <a href="/admin/users" class="btn btn-sm">Użytkownicy</a>
+            <a href="/admin/users" class="btn btn-secondary btn-sm">Użytkownicy</a>
+            <a href="/admin/security" class="btn btn-sm">Bezpieczeństwo</a>
             {% endif %}
+            <a href="/sessions" class="btn btn-secondary btn-sm">Sesje</a>
             <span>Zalogowano jako: <strong>{{ user.full_name }}</strong></span>
             <span class="role-badge">
                 {% if user.role == 'admin' %}Administrator IT{% elif user.role == 'agent' %}Agent IT{% else %}Pracownik{% endif %}
             </span>
-            <form action="/logout" method="post" style="display:inline;">
+            <form action="/logout" method="post" class="inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-secondary btn-sm">Wyloguj</button>
             </form>
         </div>

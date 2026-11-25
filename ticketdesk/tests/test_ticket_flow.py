@@ -1,5 +1,6 @@
-"""Sprawdzenie sesji, szablonów i formularzy multipart na testowej bazie SQLite."""
+"""Sprawdzenie sesji, szablonów, CSRF i formularzy multipart na testowej bazie SQLite."""
 import os
+import re
 import tempfile
 import unittest
 
@@ -10,6 +11,13 @@ from fastapi.testclient import TestClient
 from app.main import app, startup_event
 from app.database import Base, engine, SessionLocal
 from app.models import Attachment, Comment, Ticket
+
+
+def extract_csrf(html: str) -> str:
+    match = re.search(r'name="csrf_token" value="([^"]+)"', html)
+    if not match:
+        raise AssertionError("Brak ukrytego pola csrf_token w formularzu")
+    return match.group(1)
 
 
 class TicketFlowTests(unittest.TestCase):
@@ -24,22 +32,29 @@ class TicketFlowTests(unittest.TestCase):
     def tearDown(self):
         self.employee.close()
 
+    def login(self, client, username, password):
+        page = client.get("/login")
+        self.assertEqual(page.status_code, 200)
+        return client.post(
+            "/login",
+            data={
+                "username": username,
+                "password": password,
+                "csrf_token": extract_csrf(page.text),
+            },
+        )
+
     def test_login_ticket_comment_and_attachment(self):
         self.assertEqual(self.employee.get("/login").status_code, 200)
-        malformed_login = self.employee.post(
-            "/login", data={"username": "x", "password": "a"}
-        )
+        malformed_login = self.login(self.employee, "x", "a")
         self.assertEqual(malformed_login.status_code, 400)
-        invalid_login = self.employee.post(
-            "/login", data={"username": "jan.kowalski", "password": "incorrect"}
-        )
+        invalid_login = self.login(self.employee, "jan.kowalski", "incorrect")
         self.assertEqual(invalid_login.status_code, 401)
-        login = self.employee.post(
-            "/login", data={"username": "jan.kowalski", "password": "pracownik123"}
-        )
+        login = self.login(self.employee, "jan.kowalski", "pracownik123")
         self.assertEqual(login.status_code, 303)
         self.assertEqual(login.headers["location"], "/panel/employee")
-        self.assertEqual(self.employee.get("/panel/employee").status_code, 200)
+        panel = self.employee.get("/panel/employee")
+        self.assertEqual(panel.status_code, 200)
 
         attachment_body = b"Diagnostic information for the test ticket."
         created = self.employee.post(
@@ -49,6 +64,7 @@ class TicketFlowTests(unittest.TestCase):
                 "description": "Po zalogowaniu nie moge otworzyc aplikacji.",
                 "category": "Oprogramowanie",
                 "priority": "Wysoki",
+                "csrf_token": extract_csrf(panel.text),
             },
             files={"attachment": ("diagnostics.txt", attachment_body, "text/plain")},
         )
@@ -62,7 +78,10 @@ class TicketFlowTests(unittest.TestCase):
         comment_body = b"Additional diagnostic information."
         commented = self.employee.post(
             f"{ticket_path}/comments",
-            data={"content": "Dodatkowe informacje do zgloszenia"},
+            data={
+                "content": "Dodatkowe informacje do zgloszenia",
+                "csrf_token": extract_csrf(detail.text),
+            },
             files={"attachment": ("comment.txt", comment_body, "text/plain")},
         )
         self.assertEqual(commented.status_code, 303)
@@ -79,12 +98,15 @@ class TicketFlowTests(unittest.TestCase):
             self.assertEqual(len(attachments), 2)
             attachment_ids = {item.filename: item.id for item in attachments}
             self.assertEqual(
-                next(item for item in attachments if item.filename == "comment.txt").comment_id,
+                next(
+                    item for item in attachments if item.filename == "comment.txt"
+                ).comment_id,
                 comment.id,
             )
 
         for filename, expected_body in [
-            ("diagnostics.txt", attachment_body), ("comment.txt", comment_body)
+            ("diagnostics.txt", attachment_body),
+            ("comment.txt", comment_body),
         ]:
             downloaded = self.employee.get(f"/attachments/{attachment_ids[filename]}")
             self.assertEqual(downloaded.status_code, 200)
@@ -93,9 +115,7 @@ class TicketFlowTests(unittest.TestCase):
 
         with TestClient(app, follow_redirects=False) as other_employee:
             self.assertEqual(
-                other_employee.post(
-                    "/login", data={"username": "anna.nowak", "password": "pracownik123"}
-                ).status_code,
+                self.login(other_employee, "anna.nowak", "pracownik123").status_code,
                 303,
             )
             self.assertEqual(other_employee.get(ticket_path).status_code, 403)

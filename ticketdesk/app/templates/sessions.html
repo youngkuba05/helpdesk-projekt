@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-heading">
+    <h1>Moje aktywne sesje</h1>
+    <form action="/sessions/revoke-all" method="post" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-danger">Wyloguj pozostałe urządzenia</button>
+    </form>
+</div>
+
+{% if notice %}
+<div class="alert-success" role="status">{{ notice }}</div>
+{% endif %}
+
+<div class="card">
+    <p class="help-text">
+        Każde logowanie tworzy indywidualną sesję z ograniczonym czasem życia i detekcją zmian klienta.
+        Możesz natychmiast unieważnić dowolną podejrzaną sesję.
+    </p>
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID sesji</th>
+                    <th>Adres IP</th>
+                    <th>Klient (User-Agent)</th>
+                    <th>Utworzona (UTC)</th>
+                    <th>Ostatnia aktywność (UTC)</th>
+                    <th>Wygasa (UTC)</th>
+                    <th>Akcja</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sessions %}
+                <tr>
+                    <td>
+                        <code>{{ s.id[:10] }}…</code>
+                        {% if s.id == current_session_id %}
+                        <span class="badge status-Rozwiązany">Bieżąca</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ s.ip_address }}</td>
+                    <td class="ua-cell">{{ s.user_agent }}</td>
+                    <td>{{ s.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td>{{ s.last_seen_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td>{{ s.expires_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        <form action="/sessions/{{ s.id }}/revoke" method="post" class="inline-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-secondary btn-sm">Unieważnij</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="empty-cell">Brak aktywnych sesji.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
