@@ -100,6 +100,7 @@ class SecurityLab7Tests(unittest.TestCase):
             self.assertEqual(logout_resp.status_code, 303)
             client.cookies.set(SESSION_COOKIE_NAME, cookie_val)
             self.assertEqual(client.get("/panel/agent").status_code, 303)
+            client.cookies.delete(SESSION_COOKIE_NAME)
 
             # Zmiana User-Agent w trakcie sesji unieważnia sesję i rejestruje anomalię
             self.assertEqual(
