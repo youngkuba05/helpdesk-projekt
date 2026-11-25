@@ -117,10 +117,8 @@ async def add_security_headers(request: Request, call_next):
         "object-src 'none'; "
         "base-uri 'self'; "
         "form-action 'self'; "
-        "frame-ancestors 'none'; "
-        "report-uri /csp-report"
+        "frame-ancestors 'none'"
     )
-
     if IS_PRODUCTION or is_https_request(request, TRUST_PROXY_HEADERS):
         response.headers["Strict-Transport-Security"] = (
             "max-age=31536000; includeSubDomains"
